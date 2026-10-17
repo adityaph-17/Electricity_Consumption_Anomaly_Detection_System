@@ -1,0 +1,452 @@
+================================================================================
+ELECTRICITY CONSUMPTION ANOMALY DETECTION SYSTEM
+COMPLETE TECHNICAL AND ALGORITHMIC DOCUMENTATION
+================================================================================
+Project: Electricity Consumption Anomaly Detection
+Domain: Machine Learning, Statistical Analysis & Time-Series Analytics
+Technologies: Python, Flask, Pandas, NumPy, Scikit-Learn, HTML5, CSS3, JavaScript
+File: documentation.txt
+================================================================================
+
+
+TABLE OF CONTENTS:
+--------------------------------------------------------------------------------
+1. PROJECT OVERVIEW AND PURPOSE
+2. END-TO-END SYSTEM WORKFLOW (THE 8-STEP PIPELINE)
+3. DATA INGESTION & DATA CLEANING PROCESS
+4. STATISTICAL ANALYSIS & BASELINE METRICS (MATHEMATICAL FORMULAS)
+5. ANOMALY DETECTION ALGORITHMS & EQUATIONS
+   5.1. Algorithm 1: Z-Score Method (Statistical)
+   5.2. Algorithm 2: Interquartile Range / IQR (Non-Parametric Quartile Fences)
+   5.3. Algorithm 3: Isolation Forest (Unsupervised Machine Learning)
+6. METHOD COMPARISON & CONSENSUS VOTING
+7. ACCURACY EVALUATION METRICS (GROUND-TRUTH VALIDATION)
+8. STEP-BY-STEP NUMERICAL WORKED EXAMPLE (TINY WALKTHROUGH)
+9. CODE ARCHITECTURE & MODULE BREAKDOWN
+10. HOW TO RUN THE PROJECT
+
+
+================================================================================
+1. PROJECT OVERVIEW AND PURPOSE
+================================================================================
+Smart meters and energy monitors record electricity consumption (in kilowatt-hours,
+or kWh) at regular intervals (daily, hourly, etc.). Under normal operating
+conditions, household or commercial energy consumption follows a predictable
+routine.
+
+However, unusual consumption readings occur due to:
+- Excessive consumption spikes: Malfunctioning heaters/air conditioners, equipment
+  overloads, short circuits, or heavy machinery left running.
+- Abnormal consumption drops: Meter disconnection, phase failures, sensor damage,
+  blackouts, or meter bypassing/tampering.
+
+The goal of this project is to build an automated, reliable, and interpretable
+pipeline that:
+1. Accepts raw CSV smart meter readings without requiring manual data prep.
+2. Cleans duplicates, invalid dates, and physical measurement errors.
+3. Applies three distinct detection algorithms (Statistical, Non-parametric, and
+   Machine Learning) on daily consumption values.
+4. Uses consensus voting (requiring at least 2 checks to agree) to avoid false alarms.
+5. Provides interactive visualization and downloadable results (result.csv).
+
+
+================================================================================
+2. END-TO-END SYSTEM WORKFLOW (THE 8-STEP PIPELINE)
+================================================================================
+The entire application follows a deterministic 8-step pipeline:
+
++------------------------------------------------------------------------------+
+| [User Uploads CSV]                                                           |
+|        |                                                                     |
+|        v                                                                     |
+| STEP 1: load_csv()           --> Reads file, standardizes columns            |
+|        |                                                                     |
+|        v                                                                     |
+| STEP 2: clean_data()         --> Deduplicates, drops bad dates, interpolates |
+|        |                                                                     |
+|        v                                                                     |
+| STEP 3: calculate_statistics() --> Computes mean, median, std dev, 7-day trend|
+|        |                                                                     |
+|        v                                                                     |
+| STEP 4: detect_anomalies()   --> Z-Score + IQR + Isolation Forest flags      |
+|        |                                                                     |
+|        v                                                                     |
+| STEP 5: compare_methods()    --> Sums votes (0-3), flags consensus (>= 2)   |
+|        |                                                                     |
+|        +---------------------+-----------------------+                       |
+|        |                                             |                       |
+|        v                                             v                       |
+| STEP 6: Frontend Visualization              STEP 7: evaluate_accuracy()      |
+|  - Dynamic SVG Line Chart (Flagged = Amber)  - Evaluates TP, FP, FN, TN      |
+|  - 4 Key Metric Cards                        - Precision, Recall, F1 Score   |
+|  - Data Health Circular Ring                   (Active if file has 'label')  |
+|  - Filterable & Searchable Table                     |                       |
+|        |                                             |                       |
+|        +---------------------+-----------------------+                       |
+|                              |                                               |
+|                              v                                               |
+|                     STEP 8: export_to_csv()                                  |
+|                      - Streams result.csv to user                            |
++------------------------------------------------------------------------------+
+
+
+================================================================================
+3. DATA INGESTION & DATA CLEANING PROCESS
+================================================================================
+
+Step 1: Ingestion & Column Mapping (step1_upload.py)
+----------------------------------------------------
+- The input file can come from different smart meters or utility exports.
+- Automatic column detection maps aliases into standardized names:
+  * Timestamp: 'timestamp', 'date', 'datetime', 'time', 'reading_date'
+  * Consumption: 'consumption_kwh', 'consumption', 'kwh', 'usage', 'units', 'power'
+  * Label (optional): 'label', 'is_anomaly', 'anomaly', 'actual'
+- Output columns: 'timestamp', 'consumption_kwh', and optional 'label'.
+
+Step 2: Preprocessing & Data Cleaning (step2_preprocess.py)
+----------------------------------------------------------
+Real-world sensor logs often contain corrupted data. Four cleaning checks occur:
+
+1. Timestamp Parsing:
+   Dates are parsed into pandas datetime objects with errors coerced to NaT.
+   Any unparseable rows are safely removed.
+
+2. Duplicate Handling:
+   Multiple readings on the same date are identified. The first valid reading is
+   preserved, and duplicate timestamps are dropped.
+
+3. Negative Value Removal:
+   Electricity consumption cannot physically be negative:
+   If consumption_kwh < 0, the erroneous row is filtered out.
+
+4. Missing Value Treatment:
+   If a meter missed a reading or recorded NaN:
+   Time-series linear interpolation is performed:
+       y = y0 + ((x - x0) / (x1 - x0)) * (y1 - y0)
+   followed by backward-fill and forward-fill for boundary missing values.
+   This prevents line chart breaks without distorting long-term trend averages.
+
+5. Chronological Sorting:
+   All records are sorted ascending by timestamp to preserve temporal order.
+
+
+================================================================================
+4. STATISTICAL ANALYSIS & BASELINE METRICS (MATHEMATICAL FORMULAS)
+================================================================================
+In step3_statistics.py, baseline metrics are calculated across all valid readings:
+
+Let X = {x_1, x_2, ..., x_N} represent the daily consumption values in kWh.
+
+1. Mean (Arithmetic Average, mu):
+   mu = (1 / N) * SUM_{i=1}^{N} (x_i)
+   Represents the expected daily baseline consumption.
+
+2. Median:
+   Sort X in ascending order: x_(1) <= x_(2) <= ... <= x_(N).
+   If N is odd:  Median = x_((N+1)/2)
+   If N is even: Median = (x_(N/2) + x_(N/2 + 1)) / 2
+   Represents the central 50th percentile (unaffected by extreme spikes).
+
+3. Sample Variance (s^2):
+   s^2 = (1 / (N - 1)) * SUM_{i=1}^{N} (x_i - mu)^2
+
+4. Sample Standard Deviation (sigma):
+   sigma = sqrt(s^2) = sqrt((1 / (N - 1)) * SUM_{i=1}^{N} (x_i - mu)^2)
+   Quantifies the natural fluctuation or spread of daily consumption.
+
+5. Quartiles and Interquartile Range (IQR):
+   Q1 = 25th percentile (25% of readings lie below this value)
+   Q3 = 75th percentile (75% of readings lie below this value)
+   IQR = Q3 - Q1 (the spread of the middle 50% of routine days)
+
+6. 7-Day Rolling Moving Average (Trend Line):
+   For each day t:
+   Rolling_Mean(t) = (1 / W) * SUM_{j=0}^{W-1} x_{t-j}
+   where window W = 7 days.
+   This smooths short-term weekday-vs-weekend fluctuations to visualize trend.
+
+
+================================================================================
+5. ANOMALY DETECTION ALGORITHMS & EQUATIONS
+================================================================================
+In step4_detection.py, three complementary methods are executed on consumption_kwh.
+Only 3 settings are configured by the user:
+1. z_limit (Z-score limit, default 3.0)
+2. iqr_multiplier (IQR multiplier k, default 1.5)
+3. contamination (Isolation Forest expected outlier share, default 0.05)
+
+
+--------------------------------------------------------------------------------
+5.1. Algorithm 1: Z-Score Method (Parametric Statistical Check)
+--------------------------------------------------------------------------------
+Theory:
+The Z-Score (standard score) measures how many standard deviations an individual
+reading x_i lies away from the historical sample mean mu.
+
+Equation:
+   Z_i = (x_i - mu) / sigma
+
+Decision Rule:
+   Anomaly_Zscore(i) = 1  IF  |Z_i| > z_limit (typically 3.0)
+                       0  OTHERWISE
+
+Interpretation:
+- If Z_i > +3.0: Consumption surged more than 3 standard jumps above average
+  (extreme spike: e.g. heavy appliance overload, heater blast).
+- If Z_i < -3.0: Consumption plunged more than 3 standard jumps below average
+  (extreme drop: e.g. prolonged blackout, disconnected meter).
+- If |Z_i| <= 3.0: Reading falls within expected normal Gaussian variation.
+
+
+--------------------------------------------------------------------------------
+5.2. Algorithm 2: Interquartile Range / IQR (Tukey's Fences)
+--------------------------------------------------------------------------------
+Theory:
+The Z-Score uses the mean and standard deviation, which can themselves be skewed
+by a massive spike. Tukey's Interquartile Range method is robust and non-parametric:
+it relies solely on the rank-ordered percentiles of the middle 50% of data.
+
+Equations:
+   1. Interquartile Range:
+      IQR = Q3 - Q1
+   2. Lower Threshold Fence:
+      Lower_Bound = Q1 - (k * IQR)
+   3. Upper Threshold Fence:
+      Upper_Bound = Q3 + (k * IQR)
+      where k = iqr_multiplier (standard k = 1.5).
+
+Decision Rule:
+   Anomaly_IQR(i) = 1  IF  (x_i < Lower_Bound  OR  x_i > Upper_Bound)
+                    0  OTHERWISE
+
+Interpretation:
+- A multiplier of k = 1.5 defines standard outlier boundaries.
+- Because Q1 and Q3 are derived from sorted positions, a single 100 kWh spike
+  does not distort the boundary calculation.
+
+
+--------------------------------------------------------------------------------
+5.3. Algorithm 3: Isolation Forest (Machine Learning Ensemble)
+--------------------------------------------------------------------------------
+Theory:
+Isolation Forest (Liu, Ting, and Zhou) is an unsupervised tree-based ensemble.
+Instead of profiling normal points, it explicitly isolates anomalies.
+Because anomalies are few and have extreme or rare values, they require fewer
+random splits to be isolated in a binary decision tree.
+
+Algorithm Mechanics:
+1. Subsampling:
+   Subsamples of consumption_kwh data are fed into an ensemble of Isolation Trees
+   (iTrees, n_estimators = 100).
+2. Recursive Random Partitioning:
+   At each tree node:
+   - A random split value p is selected uniformly between min(x) and max(x).
+   - The tree recursively branches left (x < p) or right (x >= p) until the data
+     point is completely isolated in an external leaf node.
+3. Path Length h(x):
+   The number of edges traversed from the root node to the leaf isolating x.
+   - Normal points: Deep inside dense clusters -> long path length h(x).
+   - Outliers: Far outside the cluster -> short path length h(x).
+4. Average Path Length Normalization c(n):
+   For a dataset of size n, the average path length of an unsuccessful search in
+   a Binary Search Tree is:
+   c(n) = 2 * (ln(n - 1) + 0.5772156649) - (2 * (n - 1) / n)
+   (where 0.5772156649 is the Euler-Mascheroni constant).
+5. Anomaly Score s(x, n):
+   s(x, n) = 2 ^ ( - E(h(x)) / c(n) )
+   where E(h(x)) is the expected path length across all trees in the forest.
+   - If s -> 1: Path length is very short -> definite anomaly.
+   - If s < 0.5: Path length is long -> normal inlier.
+6. Contamination Threshold:
+   The threshold is determined by the configured contamination parameter
+   (e.g., 0.05 = top 5% highest anomaly scores are flagged as anomalies).
+
+Decision Rule:
+   Anomaly_IForest(i) = 1  IF  score(x_i) >= threshold (model prediction == -1)
+                        0  OTHERWISE (model prediction == 1)
+
+
+================================================================================
+6. METHOD COMPARISON & CONSENSUS VOTING
+================================================================================
+In step5_compare.py, the results of all three algorithms are unified:
+
+1. Vote Counting:
+   For every record i, the number of affirmative flags is summed:
+   Votes_i = Anomaly_Zscore(i) + Anomaly_IQR(i) + Anomaly_IForest(i)
+   where Votes_i in {0, 1, 2, 3}.
+
+2. Consensus Decision Rule:
+   A reading is classified as a confirmed consensus anomaly if at least 2 out of
+   the 3 methods agree:
+   Anomaly_Consensus(i) = 1  IF  Votes_i >= 2
+                          0  OTHERWISE
+
+Why Consensus Voting is Superior:
+- Minimizes False Positives: If a single algorithm triggers a false alarm due to
+  mild skewness or distribution shape, the other two algorithms outvote it.
+- Maximizes Confidence: When both statistical boundaries (Z/IQR) and the machine
+  learning tree (IForest) agree, confidence that the day is truly anomalous is high.
+
+
+================================================================================
+7. ACCURACY EVALUATION METRICS (GROUND-TRUTH VALIDATION)
+================================================================================
+When the uploaded CSV contains a ground-truth 'label' column (0 = normal, 1 = anomaly),
+step7_evaluate.py computes formal performance metrics on Anomaly_Consensus:
+
+1. Confusion Matrix Elements:
+   - True Positives (TP): Truly unusual days correctly flagged by the system.
+     TP = SUM ( (label == 1) AND (consensus == 1) )
+   - False Positives (FP): Normal days mistakenly flagged (false alarms).
+     FP = SUM ( (label == 0) AND (consensus == 1) )
+   - False Negatives (FN): Truly unusual days that were missed.
+     FN = SUM ( (label == 1) AND (consensus == 0) )
+   - True Negatives (TN): Normal days correctly left unflagged.
+     TN = SUM ( (label == 0) AND (consensus == 0) )
+
+2. Accuracy:
+   Overall proportion of correct classifications:
+   Accuracy = (TP + TN) / (TP + TN + FP + FN)
+
+3. Precision (Positive Predictive Value):
+   Of all days flagged by consensus, what fraction was actually an anomaly?
+   Precision = TP / (TP + FP)
+
+4. Recall (Sensitivity / True Positive Rate):
+   Of all actual anomalies that happened, what fraction did the system catch?
+   Recall = TP / (TP + FN)
+
+5. F1-Score (Harmonic Mean):
+   Balances precision and recall:
+   F1 = 2 * (Precision * Recall) / (Precision + Recall)
+
+
+================================================================================
+8. STEP-BY-STEP NUMERICAL WORKED EXAMPLE (TINY WALKTHROUGH)
+================================================================================
+To understand the exact arithmetic, consider the miniature dataset:
+   Days:    Day 1, Day 2, Day 3, Day 4, Day 5, Day 6
+   Values:   30,    32,    31,    29,    95,    30  (kWh)
+
+Step 1 & 2: Load and Clean
+   Input N = 6 rows. All timestamps valid, no negatives, no duplicates.
+   Data array X = [30, 32, 31, 29, 95, 30]
+
+Step 3: Statistical Calculation
+   Sum = 30 + 32 + 31 + 29 + 95 + 30 = 247
+   Mean (mu) = 247 / 6 = 41.17 kWh
+
+   Variance calculation:
+   (30 - 41.17)^2 = (-11.17)^2 = 124.77
+   (32 - 41.17)^2 = (-9.17)^2  =  84.09
+   (31 - 41.17)^2 = (-10.17)^2 = 103.43
+   (29 - 41.17)^2 = (-12.17)^2 = 148.11
+   (95 - 41.17)^2 = (+53.83)^2 = 2897.67
+   (30 - 41.17)^2 = (-11.17)^2 = 124.77
+   Sum of squared differences = 3482.84
+   Sample Variance s^2 = 3482.84 / (6 - 1) = 696.57
+   Standard Deviation sigma = sqrt(696.57) = 26.39 kWh
+
+   Quartiles (sorted: 29, 30, 30, 31, 32, 95):
+   Q1 = 30.00 kWh
+   Q3 = 32.00 kWh
+   IQR = Q3 - Q1 = 32 - 30 = 2.00 kWh
+
+Step 4: Detection Execution
+   Day 5 (value = 95 kWh):
+   1. Z-Score:
+      Z = (95 - 41.17) / 26.39 = +2.04sigma (or > 3.0sigma in normal distributions)
+   2. IQR Fences (k = 1.5):
+      Upper_Bound = Q3 + (1.5 * IQR) = 32 + (1.5 * 2.0) = 32 + 3.0 = 35.00 kWh
+      Since 95 > 35.00 kWh -> Flagged by IQR (Flag = 1)
+   3. Isolation Forest:
+      Since 95 sits completely isolated from the cluster [29, 30, 30, 31, 32],
+      its isolation tree path length is 1 split (x >= 63.5) -> Flagged by IF (Flag = 1)
+
+Step 5: Compare & Consensus
+   Day 5 (95 kWh) receives votes from multiple methods -> Votes >= 2 -> CONSENSUS ANOMALY.
+   In the results table and graph, Day 5 (95 kWh) is highlighted in RED / AMBER.
+
+Step 8: Export
+   Saved to result.csv with all flags and votes.
+
+================================================================================
+9. CODE ARCHITECTURE & MODULE BREAKDOWN
+================================================================================
+
+Backend Files:
+--------------
+- app.py:
+  Flask server. Houses /api/run, /api/download, /api/sample, and / endpoints.
+  Ensures analysis runs strictly on user-uploaded CSV files.
+
+- step1_upload.py:
+  Main function: load_csv(file_path) -> pd.DataFrame
+  Standardizes timestamp, consumption, and label columns.
+
+- step2_preprocess.py:
+  Main function: clean_data(df) -> Tuple[pd.DataFrame, dict]
+  Deduplicates, drops invalid timestamps, removes negatives, interpolates missing.
+
+- step3_statistics.py:
+  Main function: calculate_statistics(df, rolling_window=7) -> Tuple[dict, pd.DataFrame]
+  Computes mean, median, std_dev, min, max, quartiles, IQR, and 7-day rolling mean.
+
+- step4_detection.py:
+  Main function: detect_anomalies(df, z_limit, iqr_multiplier, contamination)
+  Computes anomaly_zscore, anomaly_iqr, and anomaly_iforest on consumption_kwh.
+
+- step5_compare.py:
+  Main function: compare_methods(df) -> Tuple[pd.DataFrame, dict]
+  Computes votes (0-3) and consensus flag (votes >= 2).
+
+- step7_evaluate.py:
+  Main function: evaluate_accuracy(df) -> dict or None
+  Computes confusion matrix, precision, recall, F1-score, and accuracy.
+
+- step8_export.py:
+  Main function: export_to_csv(df, output_path) -> str
+  Saves the analyzed table to result.csv.
+
+Frontend Files:
+---------------
+- templates/index.html:
+  Single-page responsive user interface.
+  Contains the upload dropzone, 3 setting inputs, welcome card, dynamic metrics,
+  SVG line chart container, data health progress ring, and filterable results table.
+
+- static/style.css:
+  Clean, modern stylesheet with the WattWatch theme palette (Teal #208c7b, Amber #d99036).
+  Fully responsive across desktop, tablet, and mobile displays.
+
+- static/script.js:
+  Client logic that connects to /api/run.
+  Dynamically calculates SVG chart path and flags, updates quality ring,
+  and provides real-time search and filtering.
+
+
+================================================================================
+10. HOW TO RUN THE PROJECT
+================================================================================
+Prerequisites:
+- Python 3.9+ installed.
+- Required packages: Flask, pandas, numpy, scikit-learn.
+
+Commands:
+1. Open a terminal in the project directory:
+   cd "/Users/aditya/Documents/mmcoe study/mdm genai/mini_project"
+
+2. Install dependencies:
+   pip install -r requirements.txt
+
+3. Start the Flask server:
+   python3 app.py
+
+4. Open in browser:
+   http://127.0.0.1:5000
+
+5. Upload any electricity consumption CSV file:
+   The system will instantly process your file and render the interactive
+   metrics, SVG chart, quality ring, detection results, and downloadable CSV.
+================================================================================

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="WattWatch helps explore electricity consumption patterns and review readings flagged by statistical anomaly detection.">
+  <title>WattWatch — Electricity Consumption Anomaly Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="WattWatch overview">
+        <span class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M18.5 3.5 7 17h7.5l-1 11.5L25 14h-7.5l1-10.5Z"/></svg></span>
+        <span class="brand-copy">wattwatch<span>CONSUMPTION INTELLIGENCE</span></span>
+      </a>
+
+      <div class="workspace-switch">
+        <span class="workspace-icon">WW</span>
+        <span><strong>Analysis workspace</strong><small id="workspace-mode-label">No file loaded</small></span>
+        <span class="switch-chevron">⌄</span>
+      </div>
+
+      <p class="nav-label">WORKSPACE</p>
+      <nav class="side-nav" aria-label="Main navigation">
+        <a class="active" href="#upload" id="nav-upload"><span class="nav-icon">↥</span><span>Upload Data</span><span class="nav-arrow">›</span></a>
+        <a href="#overview" id="nav-overview"><span class="nav-icon">▦</span><span>Overview</span></a>
+        <a href="#analysis" id="nav-analysis"><span class="nav-icon">⌁</span><span>Detection methods</span></a>
+        <a href="#results" id="nav-results"><span class="nav-icon">☷</span><span>Review results</span></a>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="sidebar-tip">
+          <span class="tip-icon">i</span>
+          <div><strong>Read anomalies carefully</strong><p>A flagged reading is a signal to investigate, not proof of theft or equipment failure.</p></div>
+        </div>
+        <div class="sidebar-user">
+          <div class="avatar">A</div>
+          <div><strong>Project workspace</strong><small>Student edition</small></div>
+          <span class="user-menu">•••</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-content" id="overview">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark small-mark">W</span><strong>WattWatch</strong></div>
+        <div class="breadcrumbs"><span>Workspace</span><b>/</b><strong id="top-breadcrumb">Data Upload</strong></div>
+        <div class="topbar-actions">
+          <span class="connection-status" id="connection-status"><i id="status-dot"></i> <span id="status-text">Ready for upload</span></span>
+          <button class="icon-button" type="button" id="btn-quick-help" aria-label="Help" title="View expected CSV format">?</button>
+          <div class="avatar top-avatar" aria-label="Project user">A</div>
+        </div>
+      </header>
+
+      <!-- Page Intro -->
+      <section class="page-intro">
+        <div>
+          <div class="eyebrow"><span></span> ELECTRICITY DATA ANALYTICS</div>
+          <h1>Consumption <em>intelligence</em></h1>
+          <p>Upload your electricity consumption CSV to spot unusual spikes, drops, and consumption anomalies.</p>
+        </div>
+      </section>
+
+      <!-- Upload Panel (Always visible at top so user can upload) -->
+      <section class="panel upload-panel" id="upload">
+        <div class="upload-title-row">
+          <div class="upload-heading">
+            <span class="upload-icon">↥</span>
+            <div>
+              <div class="section-eyebrow">GET STARTED</div>
+              <h2>Upload Your Electricity Data</h2>
+              <p>Choose an electricity CSV file. Results, graphs, and statistics are computed entirely from your file.</p>
+            </div>
+          </div>
+          <span class="step-label" id="file-status-label">Awaiting file</span>
+        </div>
+
+        <div class="upload-grid">
+          <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Choose a CSV file">
+            <input id="csv-file" type="file" accept=".csv,text/csv">
+            <div class="upload-cloud"><svg viewBox="0 0 36 36" aria-hidden="true"><path d="M18 24V8m0 0-6 6m6-6 6 6M8 23v6h20v-6"/></svg></div>
+            <h3>Drop your CSV file here</h3>
+            <p>or <label for="csv-file" class="browse-link">browse files</label> from your computer</p>
+            <div class="file-spec"><span>CSV format</span><i></i><span>Expected columns: Date / Timestamp, Consumption (kWh)</span></div>
+            <div class="selected-file" id="selectedFile" aria-live="polite"></div>
+          </div>
+
+          <div class="upload-requirements">
+            <h3>File requirements</h3>
+            <div class="requirement"><span class="requirement-check">✓</span><div><strong>Date / Timestamp</strong><p>e.g. <code>timestamp</code>, <code>date</code>, or <code>datetime</code>.</p></div></div>
+            <div class="requirement"><span class="requirement-check">✓</span><div><strong>Electricity consumption</strong><p>e.g. <code>consumption_kwh</code>, <code>consumption</code>, <code>kwh</code>, or <code>usage</code>.</p></div></div>
+            <div class="requirement"><span class="requirement-check">✓</span><div><strong>Optional label column</strong><p>If an anomaly label column exists, accuracy metrics are evaluated.</p></div></div>
+            <button class="text-button" type="button" id="sampleButton">View expected CSV format <span>↗</span></button>
+            <p class="upload-feedback" id="uploadFeedback" aria-live="polite">No file uploaded yet. Upload a CSV file to generate analysis.</p>
+          </div>
+        </div>
+
+        <!-- 3 Settings Strip -->
+        <div class="settings-strip" id="settingsStrip">
+          <div class="setting-box">
+            <label for="z_limit">Z-Score cutoff (|z| &gt;):</label>
+            <input type="number" id="z_limit" step="0.1" min="1.0" max="5.0" value="3.0">
+          </div>
+          <div class="setting-box">
+            <label for="iqr_multiplier">IQR multiplier (k):</label>
+            <input type="number" id="iqr_multiplier" step="0.1" min="1.0" max="3.0" value="1.5">
+          </div>
+          <div class="setting-box">
+            <label for="contamination">Expected outlier share:</label>
+            <input type="number" id="contamination" step="0.01" min="0.01" max="0.20" value="0.05">
+          </div>
+          <button type="button" class="button button-primary" id="btn-run-analysis">Analyse Data ↗</button>
+        </div>
+      </section>
+
+      <!-- Welcome Empty State (Visible before any file is uploaded) -->
+      <section class="welcome-box" id="welcomeState">
+        <div class="welcome-icon">⚡</div>
+        <h2>Welcome to WattWatch</h2>
+        <p>Please upload your electricity consumption CSV file above. All charts, health metrics, detection methods, and review tables will be generated dynamically from your data.</p>
+      </section>
+
+      <!-- Dynamic Dashboard Results Container (Hidden until valid file is processed) -->
+      <div id="dashboardResults" style="display: none;">
+        
+        <!-- Active File Banner -->
+        <div class="demo-banner">
+          <div class="demo-icon">✳</div>
+          <div class="banner-body">
+            <strong id="banner-title">File Processed</strong>
+            <p id="banner-desc">Showing results computed from your uploaded electricity data.</p>
+          </div>
+          <span class="demo-tag" id="banner-tag">UPLOADED FILE</span>
+        </div>
+
+        <!-- 4 Metric Cards -->
+        <section class="metric-grid" aria-label="Dataset metrics">
+          <article class="metric-card">
+            <div class="metric-top"><span>Readings analysed</span><span class="metric-icon icon-blue">▤</span></div>
+            <div class="metric-main"><strong id="metric-total-readings">-</strong><span class="metric-chip neutral-chip" id="metric-reading-chip">Daily readings</span></div>
+            <div class="metric-bottom"><span id="metric-date-span">-</span><span class="tiny-spark spark-blue">▁▂▃▂▄▃▅▄▆</span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Average consumption</span><span class="metric-icon icon-teal">⌁</span></div>
+            <div class="metric-main"><strong id="metric-avg-consumption">- <small>kWh</small></strong><span class="metric-chip green-chip">Mean</span></div>
+            <div class="metric-bottom"><span>Across valid readings</span><span class="tiny-spark spark-green">▂▃▂▄▃▅▄▅▆</span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Flagged readings</span><span class="metric-icon icon-amber">!</span></div>
+            <div class="metric-main"><strong id="metric-flagged-count">-</strong><span class="metric-chip amber-chip" id="metric-flagged-percent">-%</span></div>
+            <div class="metric-bottom"><span>Require human review</span><span class="metric-arrow">↗</span></div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>Methods compared</span><span class="metric-icon icon-violet">⇄</span></div>
+            <div class="metric-main"><strong>03</strong><span class="metric-chip violet-chip">Available</span></div>
+            <div class="metric-bottom"><span>Z-score, IQR, Isolation Forest</span><span class="metric-arrow">→</span></div>
+          </article>
+        </section>
+
+        <!-- Overview Grid: Chart + Data Health -->
+        <section class="overview-grid">
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <div><div class="section-eyebrow">USAGE PATTERN</div><h2>Electricity consumption</h2><p id="chart-caption">Daily usage in kWh · Flagged anomalies highlighted in amber</p></div>
+              <button class="select-button" type="button" id="periodButton">All readings <span>⌄</span></button>
+            </div>
+            <div class="chart-summary">
+              <div><span class="chart-summary-label">Average per day</span><strong id="summary-avg">- <small>kWh</small></strong></div>
+              <div><span class="chart-summary-label">Highest reading</span><strong id="summary-max">- <small>kWh</small></strong></div>
+              <div><span class="chart-summary-label">Flagged points</span><strong class="highlight-value" id="summary-flagged">- <small>shown</small></strong></div>
+            </div>
+            <div class="chart-wrap" role="img" aria-label="Line chart of daily electricity consumption">
+              <div class="y-axis" id="chartYAxis"><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></div>
+              <div class="chart-area">
+                <div class="grid-lines"><i></i><i></i><i></i><i></i><i></i></div>
+                <svg class="line-chart" id="chartSvg" viewBox="0 0 720 230" preserveAspectRatio="none" aria-hidden="true">
+                  <defs>
+                    <linearGradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stop-color="#2b9b86" stop-opacity=".22"/>
+                      <stop offset="100%" stop-color="#2b9b86" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <path class="chart-area-fill" id="chartAreaFill" d=""/>
+                  <path class="chart-line" id="chartLinePath" d=""/>
+                  <g id="chartPoints"></g>
+                </svg>
+                <div class="x-axis" id="chartXAxis"><span>-</span><span>-</span><span>-</span></div>
+              </div>
+            </div>
+            <div class="chart-footer">
+              <span><i class="legend-dot teal-dot"></i> Consumption (kWh)</span>
+              <span><i class="legend-dot amber-dot"></i> Flagged anomaly (votes &ge; 2)</span>
+              <span class="chart-note" id="chart-note">Hover dots for reading details</span>
+            </div>
+          </article>
+
+          <article class="panel quality-panel">
+            <div class="panel-heading compact-heading"><div><div class="section-eyebrow">DATA HEALTH</div><h2>Dataset quality</h2><p>Validation &amp; cleaning overview</p></div><span class="quality-icon">✓</span></div>
+            <div class="quality-score">
+              <div><strong id="quality-percent">-%</strong><span>valid rows</span></div>
+              <div class="quality-ring">
+                <svg viewBox="0 0 80 80" aria-label="Valid rows percentage">
+                  <circle class="ring-bg" cx="40" cy="40" r="31"/>
+                  <circle class="ring-progress" id="quality-circle" cx="40" cy="40" r="31"/>
+                </svg>
+                <span>✓</span>
+              </div>
+            </div>
+            <div class="quality-row"><div class="quality-label"><span><i class="quality-dot valid-dot"></i>Valid readings</span><strong id="quality-valid-count">-</strong></div><div class="progress"><i id="bar-valid" style="width:0%"></i></div></div>
+            <div class="quality-row"><div class="quality-label"><span><i class="quality-dot flagged-dot"></i>Flagged for review</span><strong id="quality-flagged-count">-</strong></div><div class="progress"><i class="flagged-progress" id="bar-flagged" style="width:0%"></i></div></div>
+            <div class="quality-row"><div class="quality-label"><span><i class="quality-dot invalid-dot"></i>Missing or invalid</span><strong id="quality-invalid-count">-</strong></div><div class="progress"><i class="invalid-progress" id="bar-invalid" style="width:0%"></i></div></div>
+            <div class="quality-details">
+              <div><span>Median</span><strong id="stat-median">- kWh</strong></div>
+              <div><span>Std. deviation</span><strong id="stat-std">- kWh</strong></div>
+              <div><span>Time period</span><strong id="stat-dates">-</strong></div>
+            </div>
+          </article>
+        </section>
+
+        <!-- Detection Toolkit -->
+        <section class="methods-section" id="analysis">
+          <div class="section-title-row">
+            <div><div class="section-eyebrow">DETECTION TOOLKIT</div><h2>Compare methods</h2><p>Each method identifies unusual data in a different way.</p></div>
+            <span class="section-count">03 METHODS</span>
+          </div>
+          <div class="method-grid">
+            <article class="method-card">
+              <div class="method-head"><span class="method-symbol z-symbol">Z</span><span class="method-type">STATISTICAL</span></div>
+              <h3>Z-score</h3><p>Measures how far a reading sits from the mean in standard deviations.</p>
+              <div class="method-setting"><span>Configured cutoff</span><strong id="card-setting-z">|z| &gt; 3.0</strong></div>
+              <div class="method-footer"><span class="method-status"><i class="blue-status"></i><span id="card-count-z">- days flagged</span></span><span class="method-arrow">↗</span></div>
+            </article>
+            <article class="method-card">
+              <div class="method-head"><span class="method-symbol iqr-symbol">IQR</span><span class="method-type">STATISTICAL</span></div>
+              <h3>Interquartile range</h3><p>Flags readings outside the range defined by the first and third quartiles.</p>
+              <div class="method-setting"><span>Multiplier</span><strong id="card-setting-iqr">1.5 × IQR</strong></div>
+              <div class="method-footer"><span class="method-status"><i class="teal-status"></i><span id="card-count-iqr">- days flagged</span></span><span class="method-arrow">↗</span></div>
+            </article>
+            <article class="method-card">
+              <div class="method-head"><span class="method-symbol forest-symbol">IF</span><span class="method-type">MACHINE LEARNING</span></div>
+              <h3>Isolation Forest</h3><p>Isolates observations that differ from the wider pattern of readings.</p>
+              <div class="method-setting"><span>Contamination</span><strong id="card-setting-if">0.05</strong></div>
+              <div class="method-footer"><span class="method-status"><i class="violet-status"></i><span id="card-count-if">- days flagged</span></span><span class="method-arrow">↗</span></div>
+            </article>
+          </div>
+        </section>
+
+        <!-- Results Table -->
+        <section class="panel results-panel" id="results">
+          <div class="results-header">
+            <div><div class="section-eyebrow">REVIEW QUEUE</div><h2>Potential anomalies</h2><p>Readings with 2 or more votes are flagged for human review.</p></div>
+            <a class="button button-secondary" id="exportButton" href="/api/download"><span>↓</span> Export result CSV</a>
+          </div>
+          <div class="table-controls">
+            <label class="search-box"><span>⌕</span><input id="tableSearch" type="search" placeholder="Search date or status..." aria-label="Search results"></label>
+            <label class="filter-control">Show <select id="resultFilter" aria-label="Filter results"><option value="all">All readings</option><option value="flagged" selected>Flagged only</option><option value="normal">Normal only</option></select></label>
+            <span class="table-count" id="tableCount">0 rows</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Consumption</th>
+                  <th>Z-score</th>
+                  <th>IQR</th>
+                  <th>Isolation Forest</th>
+                  <th>Votes</th>
+                  <th>Review status</th>
+                </tr>
+              </thead>
+              <tbody id="resultsBody">
+                <!-- Dynamically rendered from uploaded file -->
+              </tbody>
+            </table>
+            <div class="empty-state" id="emptyState" hidden>No readings match your search.</div>
+          </div>
+          <div class="table-note">
+            <span>ⓘ</span>
+            <p>Detection results depend on the data and method settings. Review flagged readings with context before drawing conclusions.</p>
+            <span class="sample-label" id="table-badge">UPLOADED DATA</span>
+          </div>
+        </section>
+      </div>
+
+      <footer class="page-footer">
+        <span>© 2026 WattWatch <i>·</i> Electricity Consumption Anomaly Detection</span>
+        <span>Python <i>·</i> Flask <i>·</i> Pandas <i>·</i> scikit-learn</span>
+      </footer>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="formatDialog" class="format-dialog">
+    <form method="dialog"><button class="dialog-close" aria-label="Close">×</button></form>
+    <div class="section-eyebrow">CSV EXAMPLE</div>
+    <h2>Expected file format</h2>
+    <p>Use a header row with a date column and a consumption column:</p>
+    <pre>timestamp,consumption_kwh
+2025-01-01,27.74
+2025-01-02,25.66
+2025-01-03,28.55
+2025-01-26,88.50</pre>
+    <a class="button button-primary" href="/api/sample" download>Download template CSV ↓</a>
+  </dialog>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
