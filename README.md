@@ -4,6 +4,8 @@ An end-to-end, interpretable machine learning and statistical analytics system d
 
 The system combines three independent, complementary anomaly detection algorithms—**Z-Score (Parametric Statistical)**, **Interquartile Range (IQR / Tukey's Fences - Non-Parametric)**, and **Isolation Forest (Unsupervised Machine Learning Ensemble)**—with a **Consensus Voting Engine** to maximize detection reliability and minimize false alarms.
 
+**LIVE LINK:** https://electricity-consumption-anomaly.onrender.com/
+
 ---
 
 ## 📑 Table of Contents
