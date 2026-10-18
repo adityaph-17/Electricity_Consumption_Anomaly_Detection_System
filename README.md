@@ -9,8 +9,7 @@ The system combines three independent, complementary anomaly detection algorithm
 ## 📑 Table of Contents
 
 1. [System Architecture & Working Flow](#-system-architecture--working-flow)
-   - [High-Level Pipeline Flowchart](#high-level-pipeline-flowchart)
-   - [End-to-End Execution Sequence Diagram](#end-to-end-execution-sequence-diagram)
+   - [Pipeline Working Flow Diagram (Horizontal)](#pipeline-working-flow-diagram)
    - [Client-Backend System Architecture](#client-backend-system-architecture)
 2. [Backend Module Execution & Algorithmic Mechanics](#-backend-module-execution--algorithmic-mechanics)
    - [Step 1: Data Ingestion & Column Mapping (`step1_upload.py`)](#step-1-data-ingestion--column-mapping-step1_uploadpy)
@@ -42,102 +41,24 @@ The system combines three independent, complementary anomaly detection algorithm
 
 The system processes smart meter data through a modular 8-step pipeline. The backend is orchestrated by **Flask**, numerical processing is executed via **NumPy** and **Pandas**, machine learning isolation trees are driven by **Scikit-Learn**, and the presentation layer uses modern vanilla CSS and JavaScript with an interactive SVG time-series visualizer.
 
-### High-Level Pipeline Flowchart
+### Pipeline Working Flow Diagram
 
 ```mermaid
-flowchart TD
-    A[Raw CSV File Upload] --> B[Step 1: Ingestion & Column Mapping]
-    B --> C[Step 2: Preprocessing & Data Cleaning]
-    C -->|Deduplicated, Cleaned & Interpolated| D[Step 3: Baseline Statistics & 7-Day Rolling Mean]
-    D --> E[Step 4: Tri-Algorithm Detection Engine]
+flowchart LR
+    A["📁 1. Raw CSV Upload"] --> B["🧹 2. Clean & Interpolate"]
+    B --> C["📊 3. Baseline Statistics"]
+    C --> D["⚙️ 4. Multi-Algorithm Check"]
     
-    subgraph Detection Engine [Parallel Anomaly Detection in Backend]
-        E --> E1[Algorithm 1: Z-Score Method]
-        E --> E2[Algorithm 2: IQR Tukey Fences]
-        E --> E3[Algorithm 3: Isolation Forest Model]
+    subgraph D ["4. Parallel Detection"]
+        direction TB
+        D1["Z-Score (|Z| > 3.0)"]
+        D2["IQR Fences (1.5 × IQR)"]
+        D3["Isolation Forest (5% Contam)"]
     end
-    
-    E1 -->|anomaly_zscore: 0 or 1| F[Step 5: Consensus Voting Engine]
-    E2 -->|anomaly_iqr: 0 or 1| F
-    E3 -->|anomaly_iforest: 0 or 1| F
-    
-    F -->|Votes: 0, 1, 2, or 3| G{Votes >= 2?}
-    G -->|Yes| H[Flagged Consensus Anomaly]
-    G -->|No| I[Classified Normal Inlier]
-    
-    H --> J[Step 6: Dashboard Visualization]
-    I --> J
-    
-    J --> K{Has Ground-Truth Label?}
-    K -->|Yes| L[Step 7: Evaluation Matrix TP/FP/FN/TN]
-    K -->|No| M[Skip Accuracy Metrics]
-    
-    L --> N[Step 8: CSV Export & Download]
-    M --> N
-```
 
----
-
-### End-to-End Execution Sequence Diagram
-
-The following sequence diagram details how `app.py` coordinates the user request across each discrete backend module:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as User / Browser
-    participant Flask as app.py (Controller)
-    participant Step1 as step1_upload.py
-    participant Step2 as step2_preprocess.py
-    participant Step3 as step3_statistics.py
-    participant Step4 as step4_detection.py
-    participant Step5 as step5_compare.py
-    participant Step7 as step7_evaluate.py
-    participant Step8 as step8_export.py
-    participant UI as static/script.js (Frontend)
-
-    User->>Flask: POST /api/run (CSV file + z_limit, iqr_multiplier, contamination)
-    activate Flask
-    
-    Flask->>Step1: load_csv(file_path)
-    activate Step1
-    Step1-->>Flask: raw_df (normalized columns: timestamp, consumption_kwh, [label])
-    deactivate Step1
-
-    Flask->>Step2: clean_data(raw_df)
-    activate Step2
-    Step2-->>Flask: clean_df, clean_info (deduplicated, interpolated, validated)
-    deactivate Step2
-
-    Flask->>Step3: calculate_statistics(clean_df)
-    activate Step3
-    Step3-->>Flask: stats_dict, enriched_df (with 7-day rolling_mean)
-    deactivate Step3
-
-    Flask->>Step4: detect_anomalies(enriched_df, z_limit, iqr_multiplier, contamination)
-    activate Step4
-    Step4-->>Flask: detected_df, detect_info (Z-score, IQR, Isolation Forest flags)
-    deactivate Step4
-
-    Flask->>Step5: compare_methods(detected_df)
-    activate Step5
-    Step5-->>Flask: final_df, compare_info (votes sum, anomaly_consensus flags)
-    deactivate Step5
-
-    Flask->>Step7: evaluate_accuracy(final_df)
-    activate Step7
-    Step7-->>Flask: accuracy_metrics (TP, FP, FN, TN, precision, recall, f1)
-    deactivate Step7
-
-    Flask->>Step8: export_to_csv(final_df, "results/result.csv")
-    activate Step8
-    Step8-->>Flask: result_path
-    deactivate Step8
-
-    Flask-->>User: JSON Response (clean_info, stats, detect_info, rows, accuracy)
-    deactivate Flask
-
-    User->>UI: Render Dynamic SVG Chart, KPI Cards, Quality Ring & Table
+    D --> E["🗳️ 5. Consensus Voting (Votes ≥ 2)"]
+    E --> F["📈 6. Dashboard & Export"]
+    E -.->|If Labels Present| G["🎯 7. Evaluation & Metrics"]
 ```
 
 ---
@@ -200,27 +121,6 @@ The ingestion module inspects the CSV header and maps heterogeneous column alias
 
 Raw sensor feeds frequently suffer from missing packets, communication timeouts, duplicate transmissions, and sensor glitches. Step 2 applies a 5-stage cleaning pipeline:
 
-```mermaid
-flowchart TD
-    In[Raw DataFrame] --> P1[1. Parse Datetime via pd.to_datetime]
-    P1 --> D1{Invalid Date NaT?}
-    D1 -->|Yes| Drop1[Drop Unparseable Rows]
-    D1 -->|No| P2[2. Identify Duplicates via .duplicated]
-    Drop1 --> P2
-    P2 --> D2{Duplicate Timestamp?}
-    D2 -->|Yes| Drop2[Keep First, Drop Subsequent]
-    D2 -->|No| P3[3. Check Physical Validity]
-    Drop2 --> P3
-    P3 --> D3{consumption_kwh < 0?}
-    D3 -->|Yes| Drop3[Filter Out Impossible Negatives]
-    D3 -->|No| P4[4. Handle Missing / NaN Values]
-    Drop3 --> P4
-    P4 --> Interp[Linear Time-Series Interpolation + bfill + ffill]
-    Interp --> P5[5. Chronological Sort by Timestamp]
-    P5 --> Out[Cleaned DataFrame & Quality Summary]
-```
-
-#### Detailed Cleaning Actions
 1. **Date Parsing & Bad Row Rejection**:
    Dates are converted via `pd.to_datetime(df['timestamp'], errors='coerce')`. Any unparseable strings are coerced into `NaT` (Not-a-Time) and dropped.
 2. **Deduplication**:
@@ -241,17 +141,6 @@ flowchart TD
 ### Step 3: Statistical Baseline Profiling (`step3_statistics.py`)
 
 Before applying detection algorithms, the system computes descriptive statistics across all valid readings $X = \{x_1, x_2, \dots, x_N\}$:
-
-```mermaid
-flowchart LR
-    CleanDF[Cleaned Data Series] --> MeanCalc["Mean (μ) & Std Dev (σ)"]
-    CleanDF --> MedianCalc["Median & Quartiles (Q1, Q3, IQR)"]
-    CleanDF --> RollingCalc["7-Day Rolling Moving Average"]
-    
-    MeanCalc --> StatsSummary[Summary Metrics Dictionary]
-    MedianCalc --> StatsSummary
-    RollingCalc --> EnrichedDF[Enriched DataFrame with rolling_mean]
-```
 
 #### 1. Arithmetic Mean ($\mu$)
 Expected daily consumption baseline:
@@ -301,25 +190,14 @@ To ensure robust detection across both Gaussian and skewed distributions, three 
 
 The Z-Score measures the standardized distance between an individual consumption reading $x_i$ and the historical mean $\mu$ in units of standard deviation $\sigma$.
 
-```mermaid
-flowchart TD
-    A[consumption_kwh Series] --> B[Compute Sample Mean μ]
-    A --> C["Compute Sample Std Dev σ (ddof=1)"]
-    C --> D{Is σ == 0?}
-    D -->|Yes| E[Set σ = 1e-9 to prevent division by zero]
-    D -->|No| F[Keep computed σ]
-    B --> G["Compute Z-Score: Z = (x - μ) / σ"]
-    E --> G
-    F --> G
-    G --> H["Evaluate Absolute Value |Z| > z_limit"]
-    H -->|True| I[anomaly_zscore = 1 (Flagged)]
-    H -->|False| J[anomaly_zscore = 0 (Normal)]
-```
-
 - **Mathematical Equation**:
   $$Z_i = \frac{x_i - \mu}{\sigma}$$
 - **Decision Rule**:
   $$\text{anomaly\_zscore}_i = \begin{cases} 1, & \text{if } |Z_i| > z_{\text{limit}} \\ 0, & \text{otherwise} \end{cases}$$
+- **Default Threshold**: $z_{\text{limit}} = 3.0$ (corresponding to $99.73\%$ confidence under a normal distribution).
+- **Physical Interpretation**:
+  - $Z_i > +3.0$: Severe demand surge (heavy equipment overload, cooling burst, short circuit).
+  - $Z_i < -3.0$: Abnormal drop (meter failure, line disconnect, phase failure, tampering).
 - **Backend Implementation Mechanics**:
   - Uses `series.mean()` and `series.std(ddof=1)`.
   - Protected against zero-variance files (constant consumption) by setting $\sigma = 10^{-9}$ if $\sigma = 0$.
@@ -330,21 +208,6 @@ flowchart TD
 #### 4.2 Algorithm 2: Interquartile Range (Tukey's Fences)
 
 Tukey's Fences method relies on percentiles and ranks rather than the mean. Because it calculates the spread of only the middle 50% of readings, it is completely immune to massive spikes that distort the standard deviation.
-
-```mermaid
-flowchart TD
-    A[consumption_kwh Series] --> B["Compute Q1 = 25th Percentile"]
-    A --> C["Compute Q3 = 75th Percentile"]
-    B --> D["Compute IQR = Q3 - Q1"]
-    C --> D
-    D --> E["Calculate Lower Bound = Q1 - (k * IQR)"]
-    D --> F["Calculate Upper Bound = Q3 + (k * IQR)"]
-    A --> G{"Is x < Lower Bound OR x > Upper Bound?"}
-    E --> G
-    F --> G
-    G -->|Yes| H[anomaly_iqr = 1 (Flagged)]
-    G -->|No| I[anomaly_iqr = 0 (Normal)]
-```
 
 - **Mathematical Equations**:
   $$\text{IQR} = Q_3 - Q_1$$
@@ -366,32 +229,6 @@ Isolation Forest (*Liu, Ting, Zhou - IEEE ICDM*) is an unsupervised machine lear
 1. They are the **minority** (few in number).
 2. They have **attribute values radically different** from normal instances.
 
-```mermaid
-flowchart TD
-    subgraph Ensemble Creation [Isolation Forest Backend]
-        Data[Feature Matrix: consumption_kwh] --> Sub[Subsample Data to 100 iTrees]
-        Sub --> T1[iTree 1: Random Split Boundaries]
-        Sub --> T2[iTree 2: Random Split Boundaries]
-        Sub --> T100[iTree 100: Random Split Boundaries]
-    end
-    
-    subgraph Tree Partitioning [Recursive Splitting]
-        T1 --> H1["Measure Path Length h_1(x)"]
-        T2 --> H2["Measure Path Length h_2(x)"]
-        T100 --> H100["Measure Path Length h_100(x)"]
-    end
-    
-    H1 --> AvgPath["Average Path Length E(h(x))"]
-    H2 --> AvgPath
-    H100 --> AvgPath
-    
-    AvgPath --> Norm["Normalize using BST Average Path Length c(n)"]
-    Norm --> Score["Calculate Anomaly Score: s(x, n) = 2^(-E(h(x))/c(n))"]
-    Score --> Thresh{"Score >= Contamination Threshold? (prediction == -1)"}
-    Thresh -->|Yes| Flag[anomaly_iforest = 1]
-    Thresh -->|No| Normal[anomaly_iforest = 0]
-```
-
 - **Tree Isolation Logic**:
   - Outliers sit in sparse regions. A random cut between $[\min(x), \max(x)]$ isolates an outlier in very few splits (short path length $h(x) \approx 1$).
   - Normal points sit clustered together and require many successive cuts to separate (deep path length $h(x) \gg 1$).
@@ -410,29 +247,14 @@ flowchart TD
 
 A single model acting alone can be misled by dataset skew, high variance, or stochastic splits. The consensus engine requires multiple models to confirm an anomaly before alerting the user:
 
-```mermaid
-flowchart TD
-    Z[anomaly_zscore: 0 / 1] --> Sum[Column-Wise Sum: votes = Z + IQR + IF]
-    IQR[anomaly_iqr: 0 / 1] --> Sum
-    IF[anomaly_iforest: 0 / 1] --> Sum
-    
-    Sum --> VoteScore["Vote Score: {0, 1, 2, 3}"]
-    
-    VoteScore --> Check{Votes >= 2?}
-    Check -->|Votes == 3| C3["Unanimous Anomaly (All 3 Agreed) --> Flag = 1"]
-    Check -->|Votes == 2| C2["Majority Anomaly (2 Agreed) --> Flag = 1"]
-    Check -->|Votes == 1| C1["Isolated Single Flag (Outvoted) --> Flag = 0"]
-    Check -->|Votes == 0| C0["Clean Normal Day (0 Flags) --> Flag = 0"]
-    
-    C3 --> Confirmed[Consensus Anomaly Confirmed]
-    C2 --> Confirmed
-    C1 --> Rejected[Normal Inlier Confirmed]
-    C0 --> Rejected
-```
-
 - **Decision Formula**:
   $$\text{Votes}_i = \text{anomaly\_zscore}_i + \text{anomaly\_iqr}_i + \text{anomaly\_iforest}_i \quad \in \{0, 1, 2, 3\}$$
   $$\text{anomaly\_consensus}_i = \begin{cases} 1, & \text{if } \text{Votes}_i \ge 2 \\ 0, & \text{if } \text{Votes}_i < 2 \end{cases}$$
+- **Vote Breakdown**:
+  - **3 Votes**: Unanimous anomaly (All 3 checks triggered).
+  - **2 Votes**: Strong majority anomaly (Confirmed by 2 out of 3 checks).
+  - **1 Vote**: Outvoted isolated anomaly (Safely ignored to avoid false alarms).
+  - **0 Votes**: Routine normal reading.
 - **False Alarm Elimination**: If a single model triggers a false alarm on a slightly unusual day ($Votes = 1$), the remaining two models outvote it, ensuring only true irregularities are flagged.
 
 ---
@@ -452,24 +274,10 @@ The results are dynamically rendered on the frontend dashboard:
 
 When the uploaded CSV contains a `label` column ($1 = \text{true anomaly}, 0 = \text{normal}$), the backend validates the consensus predictions against ground truth:
 
-```mermaid
-flowchart TD
-    Input[Data with 'label' and 'anomaly_consensus'] --> Eval{Classify Every Row}
-    
-    Eval -->|label == 1 AND consensus == 1| TP[True Positive: Correctly Caught Anomaly]
-    Eval -->|label == 0 AND consensus == 1| FP[False Positive: False Alarm]
-    Eval -->|label == 1 AND consensus == 0| FN[False Negative: Missed Anomaly]
-    Eval -->|label == 0 AND consensus == 0| TN[True Negative: Correctly Ignored Normal]
-    
-    TP --> Formulas[Compute Evaluation Metrics]
-    FP --> Formulas
-    FN --> Formulas
-    TN --> Formulas
-    
-    Formulas --> Acc["Accuracy = (TP + TN) / Total"]
-    Formulas --> Prec["Precision = TP / (TP + FP)"]
-    Formulas --> Rec["Recall = TP / (TP + FN)"]
-    Formulas --> F1["F1-Score = 2 * (Prec * Rec) / (Prec + Rec)"]
+```text
+                          Actual Anomaly (1)      Actual Normal (0)
+Flagged Consensus (1)    [ True Positive  (TP) ] [ False Positive (FP) ] -> False Alarm
+Not Flagged (0)          [ False Negative (FN) ] [ True Negative  (TN) ] -> Correct Pass
 ```
 
 | Metric | Formula | What It Tells Us |
